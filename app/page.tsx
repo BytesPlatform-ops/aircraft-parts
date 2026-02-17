@@ -178,8 +178,7 @@ export default function Home() {
         {/* Search Progress */}
         {isLoading && (
           <SearchProgress 
-            sources={sourceStatuses} 
-            isSearching={isLoading}
+            sourceStatuses={sourceStatuses}
           />
         )}
 
