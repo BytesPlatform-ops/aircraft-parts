@@ -1,64 +1,232 @@
-import Image from "next/image";
+'use client';
+
+import { useState, useCallback } from 'react';
+import SearchBar from '@/components/SearchBar';
+import SourceSelector from '@/components/SourceSelector';
+import SearchProgress, { SourceStatus } from '@/components/SearchProgress';
+import ResultsTable from '@/components/ResultsTable';
+import { SearchResult } from '@/lib/types';
+
+interface SearchResponse {
+  query: string;
+  searchTerms: string[];
+  results: Record<string, SearchResult[]>;
+  totalResults: number;
+}
+
+const DEFAULT_SOURCES = {
+  partsbase: true,
+  stockmarket: true,
+  ebay: true,
+  locatory: true,
+  mcmaster: true,
+  inventory: true,
+};
 
 export default function Home() {
+  const [isLoading, setIsLoading] = useState(false);
+  const [searchResults, setSearchResults] = useState<Record<string, SearchResult[]> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [searchInfo, setSearchInfo] = useState<{ query: string; terms: string[]; total: number } | null>(null);
+  const [enabledSources, setEnabledSources] = useState<Record<string, boolean>>(DEFAULT_SOURCES);
+  const [sourceStatuses, setSourceStatuses] = useState<Record<string, SourceStatus>>({});
+
+  const handleSearch = useCallback(async (query: string) => {
+    // Check if at least one source is enabled
+    const hasEnabledSource = Object.values(enabledSources).some(Boolean);
+    if (!hasEnabledSource) {
+      setError('Please select at least one data source');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setSearchResults(null);
+    setSearchInfo(null);
+
+    // Initialize source statuses
+    const initialStatuses: Record<string, SourceStatus> = {};
+    Object.entries(enabledSources).forEach(([key, enabled]) => {
+      if (enabled) {
+        initialStatuses[key] = 'searching';
+      }
+    });
+    setSourceStatuses(initialStatuses);
+
+    // Simulate individual source progress updates
+    const sourceKeys = Object.keys(initialStatuses);
+    const delays = [200, 350, 400, 450, 500, 600];
+    
+    sourceKeys.forEach((key, index) => {
+      setTimeout(() => {
+        setSourceStatuses(prev => ({
+          ...prev,
+          [key]: 'done'
+        }));
+      }, delays[index % delays.length]);
+    });
+
+    try {
+      const response = await fetch('/api/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query, sources: enabledSources }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Search failed with status ${response.status}`);
+      }
+
+      const data: SearchResponse = await response.json();
+      
+      // Mark all as done
+      const finalStatuses: Record<string, SourceStatus> = {};
+      Object.entries(enabledSources).forEach(([key, enabled]) => {
+        if (enabled) {
+          finalStatuses[key] = 'done';
+        }
+      });
+      setSourceStatuses(finalStatuses);
+      
+      setSearchResults(data.results);
+      setSearchInfo({
+        query: data.query,
+        terms: data.searchTerms,
+        total: data.totalResults,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'An unexpected error occurred';
+      setError(message);
+      
+      // Mark sources as error
+      const errorStatuses: Record<string, SourceStatus> = {};
+      Object.entries(enabledSources).forEach(([key, enabled]) => {
+        if (enabled) {
+          errorStatuses[key] = 'error';
+        }
+      });
+      setSourceStatuses(errorStatuses);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [enabledSources]);
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+          <h1 className="text-2xl font-bold text-gray-900">
+            Aircraft Parts Search
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="mt-1 text-sm text-gray-500">
+            Search across multiple sources for aircraft parts
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </header>
+
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+        {/* Search Section */}
+        <div className="flex justify-center mb-6">
+          <SearchBar onSearch={handleSearch} disabled={isLoading} />
         </div>
+        
+        {/* Source Selection */}
+        <div className="mb-6">
+          <SourceSelector 
+            sources={enabledSources} 
+            onChange={setEnabledSources}
+            disabled={isLoading}
+          />
+        </div>
+
+        {/* Error Toast */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+            <svg
+              className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-red-800">Search Error</p>
+              <p className="text-sm text-red-600">{error}</p>
+            </div>
+            <button
+              onClick={() => setError(null)}
+              className="text-red-500 hover:text-red-700"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {/* Search Progress */}
+        {isLoading && (
+          <SearchProgress 
+            sources={sourceStatuses} 
+            isSearching={isLoading}
+          />
+        )}
+
+        {/* Search Info */}
+        {searchInfo && !isLoading && (
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-800">
+              <span className="font-medium">Searched for:</span> {searchInfo.query}
+            </p>
+            {searchInfo.terms.length > 1 && (
+              <p className="text-sm text-blue-600 mt-1">
+                <span className="font-medium">Expanded terms:</span> {searchInfo.terms.join(', ')}
+              </p>
+            )}
+            <p className="text-sm text-blue-600 mt-1">
+              <span className="font-medium">Total results:</span> {searchInfo.total}
+            </p>
+          </div>
+        )}
+
+        {/* Results */}
+        {searchResults && !isLoading && (
+          <ResultsTable results={searchResults} />
+        )}
+
+        {/* Initial State */}
+        {!searchResults && !isLoading && !error && (
+          <div className="text-center py-16">
+            <svg
+              className="mx-auto h-16 w-16 text-gray-300"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+            <h3 className="mt-4 text-lg font-medium text-gray-900">Search for Parts</h3>
+            <p className="mt-2 text-gray-500">
+              Enter a part number to search across Partsbase, eBay, StockMarket, McMaster-Carr, and your internal inventory.
+            </p>
+          </div>
+        )}
       </main>
     </div>
   );
